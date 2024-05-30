@@ -3,7 +3,10 @@ import pickle
 import time
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import logging
 
+# Set up logging
+logging.basicConfig(filename='backup.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
@@ -17,8 +20,9 @@ def get_gdrive_service():
     if os.path.exists(token_file):
         with open(token_file, 'rb') as token:
             creds = pickle.load(token)
-    # If there are no (valid) credentials available, let the user log in.
+    # If there are no (valid) credentials available
     if not creds:
+        logging.error("Credentials not found.")
         raise Exception("Credentials not found.")
 
     return build('drive', 'v3', credentials=creds)
@@ -28,6 +32,7 @@ def search(service, query):
     result = []
     page_token = None
     while True:
+        logging.info(f"Searching for files with query: {query}")
         response = service.files().list(
             q=query,
             spaces="drive",
@@ -54,13 +59,13 @@ def backup_folder():
     search_result = search(service, query=f"name='{backup_folder_name}'")
     if search_result:
         backup_folder_id = search_result[0][0]
-        print(f"Backup folder already present, ID: {backup_folder_id}")
+        logging.info(f"Backup folder already present, ID: {backup_folder_id}")
     else:
-        print("Backup folder is being created...")
+        logging.info("Backup Folder not found! New Backup folder is being created...")
         file_metadata = {'name': backup_folder_name, 'mimeType': 'application/vnd.google-apps.folder'}
         backup_folder = service.files().create(body=file_metadata, fields='id').execute()
         backup_folder_id = backup_folder.get('id')
-        print(f"Backup folder created, ID: {backup_folder_id}")
+        logging.info(f"Backup folder created, ID: {backup_folder_id}")
 
     # Get a list of files already present in the backup folder
     backup_files = search(service, query=f"'{backup_folder_id}' in parents")
@@ -72,13 +77,14 @@ def backup_folder():
             # Check if the file already exists in the backup folder
             existing_file = next((file for file in backup_files if file[1] == file_name), None)
             if existing_file:
-                print(f"File '{file_name}' already exists in the backup folder. Skipping upload.")
+                logging.info(f"File '{file_name}' already exists in the backup folder. Skipping upload.")
             else:
+                logging.info(f"Uploading file '{file_name}'...")
                 file_metadata = {"name": file_name, "parents": [backup_folder_id]}
                 media = MediaFileUpload(file_path, resumable=True)
                 file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                print(f"File uploaded: {file_name}, ID: {file.get('id')}")
-    print("Backup completed")
+                logging.info(f"File uploaded: {file_name}, ID: {file.get('id')}")
+    logging.info("Backup completed")
 
 if __name__ == '__main__':
     # while True:
